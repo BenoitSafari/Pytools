@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nx-archiver"
+version = "0.1.0"
+description = "Nintendo Switch XCI/NSP file manipulation tools"
+requires-python = ">=3.10"
+dependencies = [
+    "pycryptodome>=3.20",
+    "zstandard>=0.22",
+]
+
+[project.scripts]
+xci-extract = "nx_archiver.cli.xci_extract:main"
+nsp-to-xci = "nx_archiver.cli.nsp_to_xci:main"
+xci-modify = "nx_archiver.cli.xci_modify:main"
