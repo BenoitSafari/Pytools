@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-import zstandard
-
 NCA_HEADER_SIZE = 0x4000
 NCZSECTN_MAGIC = b"NCZSECTN"
 NCZBLOCK_MAGIC = b"NCZBLOCK"
@@ -100,6 +98,7 @@ def _decompress_stream(
     decompressed_size: int,
 ) -> None:
     """Decompress a solid zstd stream and re-encrypt sections."""
+    import zstandard
     dctx = zstandard.ZstdDecompressor()
     reader = dctx.stream_reader(stream)
 
@@ -144,6 +143,7 @@ def _decompress_blocks(
     output: BinaryIO,
 ) -> None:
     """Decompress block-compressed NCZ and re-encrypt sections."""
+    import zstandard
     dctx = zstandard.ZstdDecompressor()
     block_size = 1 << block_header.block_size_exponent
 

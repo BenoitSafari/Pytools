@@ -16,3 +16,4 @@ dependencies = [
 xci-extract = "nx_archiver.cli.xci_extract:main"
 nsp-to-xci = "nx_archiver.cli.nsp_to_xci:main"
 xci-modify = "nx_archiver.cli.xci_modify:main"
+make-xci = "nx_archiver.cli.make_xci:main"
