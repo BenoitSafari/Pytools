@@ -140,7 +140,9 @@ def main(argv=None):
         elif args.platform == "ps1":
             rename_chd_files(output_dir, db_path, args.dry_run)
         elif args.platform == "ps2":
-            rename_cso_files(output_dir, db_path, args.dry_run, iso_dir=src_dir)
+            rename_cso_files(output_dir, db_path, args.dry_run, iso_dir=src_dir, console="PS2")
+        elif args.platform == "psp":
+            rename_cso_files(output_dir, db_path, args.dry_run, iso_dir=src_dir, console="PSP")
         else:
             log(f"Rename not yet implemented for {args.platform} (skipping)")
     else:

@@ -2,6 +2,8 @@
 
 PS1 discs contain a SYSTEM.CNF file with:  BOOT = cdrom:\\SLUS_012.34;1
 PS2 discs contain a SYSTEM.CNF file with:  BOOT2 = cdrom0:\\SLUS_216.24;1
+PSP discs contain UMD_DATA.BIN with:       ULUS-10080|DG|G|01.00
+             and/or PARAM.SFO with:        DISC_ID = ULUS10080
 The serial is extracted and normalized to the standard format: SLUS-01234
 """
 
@@ -22,6 +24,16 @@ SERIAL_PATTERN = re.compile(
 BOOT_PATTERN = re.compile(
     rb"BOOT2?\s*=\s*cdrom\d?[:\\/]+\\?([A-Z]{4}[_\-]\d{3}[._]\d{2})",
     re.IGNORECASE,
+)
+
+# UMD_DATA.BIN content starts with the serial followed by a pipe:
+# "ULUS-10080|DG|G|01.00"
+PSP_UMD_PATTERN = re.compile(rb"([A-Z]{4})-(\d{5})\|", re.ASCII)
+
+# PARAM.SFO DISC_ID field (9 chars, no dash): "ULUS10080"
+# Surrounded by null padding or following the DISC_ID key.
+PSP_DISCID_PATTERN = re.compile(
+    rb"DISC_ID[\x00 ]{0,32}([A-Z]{4})(\d{5})", re.ASCII
 )
 
 
@@ -248,3 +260,50 @@ def extract_serial_from_cso(cso_path):
             return candidate
 
     return None
+
+
+def _search_psp_serial(data):
+    """Search a byte blob for a PSP serial. Returns 'XXXX-00000' or None."""
+    if not data:
+        return None
+    m = PSP_UMD_PATTERN.search(data)
+    if m:
+        return f"{m.group(1).decode('ascii')}-{m.group(2).decode('ascii')}"
+    m = PSP_DISCID_PATTERN.search(data)
+    if m:
+        return f"{m.group(1).decode('ascii')}-{m.group(2).decode('ascii')}"
+    return None
+
+
+def extract_serial_from_psp_iso(iso_path):
+    """Extract PSP serial from an ISO by scanning for UMD_DATA.BIN or PARAM.SFO.
+
+    PSP ISOs place metadata near the start of the filesystem. We read up to
+    16 MB which covers virtually all commercial discs.
+    """
+    iso_path = Path(iso_path)
+    if not iso_path.is_file():
+        return None
+
+    read_size = 16 * 1024 * 1024
+    try:
+        with open(iso_path, "rb") as f:
+            data = f.read(read_size)
+    except OSError:
+        return None
+
+    return _search_psp_serial(data)
+
+
+def extract_serial_from_psp_cso(cso_path):
+    """Extract PSP serial from a CSO by decompressing the first blocks (~16MB)."""
+    cso_path = Path(cso_path)
+    if not cso_path.is_file():
+        return None
+
+    try:
+        data = _read_cso_blocks(cso_path, 16 * 1024 * 1024)
+    except (OSError, struct.error):
+        return None
+
+    return _search_psp_serial(data)

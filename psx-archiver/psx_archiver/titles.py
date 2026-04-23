@@ -40,6 +40,7 @@ def clean_title(title):
     t = title_case(title)
     t = t.replace(":", " -")
     t = t.replace("/", "-")
+    t = t.replace("&amp;", "And").replace(" & ", " And ")
     for c in '?*"<>|':
         t = t.replace(c, "")
     t = re.sub(r"\s+", " ", t).strip()

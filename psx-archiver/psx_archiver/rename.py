@@ -11,6 +11,7 @@ from psx_archiver.db import load_database, lookup_serial
 from psx_archiver.logger import log
 from psx_archiver.serial import (
     extract_serial_from_chd, extract_serial_from_cso, extract_serial_from_iso,
+    extract_serial_from_psp_cso, extract_serial_from_psp_iso,
 )
 from psx_archiver.titles import clean_title
 
@@ -19,11 +20,34 @@ REGION_MAP = {
     "SCES": "PAL", "SLES": "PAL", "SCED": "PAL", "SLED": "PAL",
     "SLUS": "NTSC-U", "SCUS": "NTSC-U",
     "SLPS": "NTSC-J", "SCPS": "NTSC-J", "SLPM": "NTSC-J",
+    # PSP prefixes
+    "ULUS": "NTSC-U", "UCUS": "NTSC-U",
+    "ULES": "PAL", "UCES": "PAL",
+    "ULJM": "NTSC-J", "ULJS": "NTSC-J", "UCJS": "NTSC-J", "UCJM": "NTSC-J",
+    "NPUG": "NTSC-U", "NPUH": "NTSC-U", "NPUZ": "NTSC-U", "NPUF": "NTSC-U",
+    "NPEG": "PAL", "NPEH": "PAL", "NPEZ": "PAL", "NPEX": "PAL",
+    "NPJG": "NTSC-J", "NPJH": "NTSC-J", "NPJJ": "NTSC-J",
 }
 
 def _get_disc_number(name):
     m = re.search(r" CD(\d+)$", name)
     return int(m.group(1)) if m else None
+
+
+# Language tokens commonly seen in redump/nointro filenames
+_LANG_TOKENS = {
+    "En", "Fr", "De", "Es", "It", "Nl", "Pt", "Sv", "No", "Nw", "Da", "Fi",
+    "Ja", "Ko", "Zh", "Ch", "Ru", "Pl", "Du", "Cs",
+}
+
+
+def _extract_languages_from_filename(stem):
+    """Return 'En,Fr,De' from a stem like 'Foo (USA) (En,Fr,De)'. None if absent."""
+    for group in re.findall(r"\(([^)]+)\)", stem):
+        tokens = [t.strip() for t in group.split(",")]
+        if tokens and all(t in _LANG_TOKENS for t in tokens):
+            return ",".join(tokens)
+    return None
 
 
 def _build_new_name(file_path, db, extract_serial_fn):
@@ -46,6 +70,10 @@ def _build_new_name(file_path, db, extract_serial_fn):
         title = clean_title(entry["title"])
         region = entry["region"]
         languages = entry.get("languages", "").strip().strip('"') or None
+        # Fall back to languages parsed from the original filename when the DB
+        # entry has none (common for PSP rows).
+        if not languages:
+            languages = _extract_languages_from_filename(lookup)
     else:
         # Fallback: use filename as title
         title_part = re.sub(r"\s*\([^)]*\)", "", lookup).strip()
@@ -54,7 +82,7 @@ def _build_new_name(file_path, db, extract_serial_fn):
             region = REGION_MAP.get(serial[:4], "PAL")
         else:
             region = "NTSC-U"
-        languages = None
+        languages = _extract_languages_from_filename(lookup)
 
     # Build filename
     name = title
@@ -113,7 +141,11 @@ def _rename_files(directory, glob_pattern, db, extract_serial_fn, dry_run=False)
         if new_path.exists() and old != new_path:
             print(f"  SKIP (exists): {old.name} -> {new_name}")
             continue
-        old.rename(new_path)
+        try:
+            old.rename(new_path)
+        except PermissionError as e:
+            print(f"  LOCKED: {old.name} ({e.strerror})")
+            continue
         print(f"  {old.name} -> {new_name}")
         success += 1
 
@@ -130,16 +162,25 @@ def rename_chd_files(chd_dir, db_path, dry_run=False):
     return _rename_files(chd_dir, "*.chd", db, extract_serial_from_chd, dry_run)
 
 
-def rename_cso_files(cso_dir, db_path, dry_run=False, iso_dir=None):
+def rename_cso_files(cso_dir, db_path, dry_run=False, iso_dir=None, console="PS2"):
     """Rename all CSO files in cso_dir using serial extraction and DB lookup.
 
     If iso_dir is provided, tries to extract serial from the source ISO first
     (much faster than decompressing CSO blocks). Falls back to CSO if no
     matching ISO is found.
 
+    `console` selects the DB slice and extraction strategy: "PS2" or "PSP".
+
     Returns (renamed_count, total_count).
     """
-    db = load_database(db_path, console="PS2")
+    db = load_database(db_path, console=console)
+
+    if console == "PSP":
+        iso_extractor = extract_serial_from_psp_iso
+        cso_extractor = extract_serial_from_psp_cso
+    else:
+        iso_extractor = extract_serial_from_iso
+        cso_extractor = extract_serial_from_cso
 
     if iso_dir:
         iso_dir = Path(iso_dir)
@@ -154,11 +195,11 @@ def rename_cso_files(cso_dir, db_path, dry_run=False, iso_dir=None):
             cso_path = Path(cso_path)
             iso_path = iso_map.get(cso_path.stem)
             if iso_path and iso_path.is_file():
-                serial = extract_serial_from_iso(iso_path)
+                serial = iso_extractor(iso_path)
                 if serial:
                     return serial
-            return extract_serial_from_cso(cso_path)
+            return cso_extractor(cso_path)
 
         return _rename_files(cso_dir, "*.cso", db, extract_serial_prefer_iso, dry_run)
 
-    return _rename_files(cso_dir, "*.cso", db, extract_serial_from_cso, dry_run)
+    return _rename_files(cso_dir, "*.cso", db, cso_extractor, dry_run)
