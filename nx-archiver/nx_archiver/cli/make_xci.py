@@ -1,4 +1,4 @@
-"""Scan a directory of NSP/NSZ files and build one XCI per game (base + updates + DLCs)."""
+"""Scan a folder of NSP/NSZ files and build one XCI per game (base + updates + DLC)."""
 
 from __future__ import annotations
 
@@ -8,62 +8,26 @@ import sys
 import tempfile
 from pathlib import Path
 
-
-# Nintendo Switch Title ID convention (16 hex digits = 64-bit):
-#
-#   Base game : last 3 hex digits = 000  (e.g. 0100633007D48000)
-#   Update    : last 3 hex digits = 800  (e.g. 0100633007D48800)
-#   DLC       : last 3 hex digits = 001, 002 … (e.g. 0100B3F000BE3001)
-#
-# All variants share the same upper 13 hex digits (52 bits).
-# The group key is therefore title_id[:13].
-
-TITLE_ID_RE = re.compile(r"\[([0-9A-Fa-f]{16})\]")
-TIK_NAME_RE = re.compile(r"^([0-9a-fA-F]{16})[0-9a-fA-F]*\.tik$")
-VERSION_RE = re.compile(r"\[v([^\]]+)\]")
-
-
-def _classify(title_id: str) -> str:
-    """Return 'base', 'update', or 'dlc' for a 16-hex-digit title ID.
-
-    Nintendo Switch TitleID layout (64-bit):
-      - Last 4 hex digits encode the variant:
-          x000  -> base game  (last 3 = 000)
-          x800  -> update     (last 3 = 800)
-          y001+ -> DLC        (last 3 = 001, 002 …)
-      - The upper 12 digits identify the game family.
-
-    Example (Hollow Knight):
-      0100633007D48000  -> base   (last 3 = 000)
-      0100633007D48800  -> update (last 3 = 800)
-
-    Example (Pokken DX):
-      0100B3F000BE2000  -> base   (last 3 = 000)
-      0100B3F000BE2800  -> update (last 3 = 800)
-      0100B3F000BE3001  -> DLC 1  (last 3 = 001)
-      0100B3F000BE3002  -> DLC 2  (last 3 = 002)
-    """
-    last3 = title_id[-3:].upper()
-    if last3 == "000":
-        return "base"
-    if last3 == "800":
-        return "update"
-    return "dlc"
-
-
-def _base_id(title_id: str) -> str:
-    """Return the group key (upper 12 hex digits) shared by base, update and DLCs."""
-    return title_id[:12].upper()
+from nx_archiver.cli._common import format_size
+from nx_archiver.cli.nsp_extract import extract_nsp
+from nx_archiver.cli.title_id import (
+    TIK_NAME_RE,
+    TITLE_ID_RE,
+    VERSION_RE,
+    base_id,
+    classify,
+)
 
 
 def _read_title_id_from_nsp(path: Path) -> str | None:
-    """Extract title ID from the .tik filename inside an NSP/NSZ PFS0.
+    """Extract the TitleID from the .tik name inside the NSP/NSZ PFS0.
 
-    The ticket filename is ``<titleid><rightsid>.tik``, so the first 16 hex
-    chars are the title ID.  This is a fast, decryption-free probe.
+    The ticket name is ``<titleid><rightsid>.tik``: the first 16 hex give the
+    TitleID. A fast probe, with no decryption.
     """
     try:
         from nx_archiver.pfs0 import parse_pfs0
+
         with open(path, "rb") as fh:
             pfs0 = parse_pfs0(fh)
             for entry in pfs0.entries:
@@ -76,9 +40,9 @@ def _read_title_id_from_nsp(path: Path) -> str | None:
 
 
 def scan_directory(directory: Path) -> dict[str, dict[str, list[Path]]]:
-    """Scan *directory* and return groups keyed by base_id.
+    """Scan *directory* and return groups indexed by base_id.
 
-    Each group is a dict with keys 'base', 'update', 'dlc'.
+    Each group is a dict with the keys 'base', 'update', 'dlc'.
     """
     groups: dict[str, dict[str, list[Path]]] = {}
 
@@ -86,12 +50,12 @@ def scan_directory(directory: Path) -> dict[str, dict[str, list[Path]]]:
         if f.suffix.lower() not in (".nsp", ".nsz"):
             continue
 
-        # Try to get title ID from filename first (fastest)
+        # TitleID from the filename first (the fastest).
         m = TITLE_ID_RE.search(f.name)
         if m:
             tid = m.group(1).upper()
         else:
-            # Fall back to reading the .tik filename inside the NSP
+            # Fallback: read the .tik name inside the NSP.
             tid = _read_title_id_from_nsp(f)
             if tid:
                 print(f"  [probe] {f.name} -> TitleID {tid}")
@@ -99,21 +63,19 @@ def scan_directory(directory: Path) -> dict[str, dict[str, list[Path]]]:
                 print(f"  [skip] No title ID found: {f.name}", file=sys.stderr)
                 continue
 
-        kind = _classify(tid)
-        gid = _base_id(tid)
+        kind = classify(tid)
+        gid = base_id(tid)
 
-        if gid not in groups:
-            groups[gid] = {"base": [], "update": [], "dlc": []}
-        groups[gid][kind].append(f)
+        groups.setdefault(gid, {"base": [], "update": [], "dlc": []})[kind].append(f)
 
     return groups
 
 
 def _game_name(files: dict[str, list[Path]]) -> str:
-    """Derive a human-readable game name from the first base file, or fallback.
+    """Infer a readable game name from the first base file, otherwise a fallback.
 
-    Strips trailing version strings (e.g. ``House v1.0.0[...]`` → ``House``)
-    so the version doesn't end up embedded in the XCI filename.
+    Strips version suffixes (e.g. ``House v1.0.0[...]`` → ``House``) so they are
+    not carried into the XCI name.
     """
     for kind in ("base", "update", "dlc"):
         for p in files[kind]:
@@ -127,39 +89,38 @@ def _game_name(files: dict[str, list[Path]]) -> str:
                     candidate = name[:bracket].strip()
                 else:
                     continue
-            # Strip trailing version string like " v1.0.0" or " v3"
+            # Strip a possible version suffix "v1.0.0" or "v3".
             candidate = re.sub(r"\s+v\d[\d.]*$", "", candidate).strip()
             if candidate:
                 return candidate
     return "Unknown"
 
 
-# Human-readable dotted version pattern anywhere in the filename prefix
-_HUMAN_VERSION_RE = re.compile(r"\bv(\d+\.\d+(?:\.\d+)*)\b")
+# "Readable" (dotted) version anywhere in the filename.
+# Accepts: "v1.0.4", "Up v1.0.3", "UPD1.3.0", "Update 1.0.2", "Update v1.3.0".
+_HUMAN_VERSION_RE = re.compile(r"(?:\bv|\bUPD\s*|\bUpdate\s+v?)(\d+\.\d+(?:\.\d+)*)\b")
 
 
 def _update_version(files: dict[str, list[Path]]) -> str | None:
-    """Extract the update version string from update filenames.
+    """Extract the update version from the update filenames.
 
     Priority:
-    1. Human-readable dotted version in the filename *before* the first ``[``
-       (e.g. ``House v1.0.4[...]`` → ``v1.0.4``  or  ``Up v1.0.3`` → ``v1.0.3``).
-    2. Bracketed ``[vNNNNNN]`` integer decoded via Nintendo's versioning scheme
-       ``(n >> 16).(( n >> 8) & 0xFF).(n & 0xFF)``.
+    1. readable dotted version in the name, *before* the first ``[``
+       (e.g. ``House v1.0.4[...]`` → ``v1.0.4`` or ``Up v1.0.3`` → ``v1.0.3``);
+    2. integer ``[vNNNNNN]`` decoded via the Nintendo scheme
+       ``(n >> 16).((n >> 8) & 0xFF).(n & 0xFF)``.
 
-    Returns None when no update files are present.
+    Returns None when no update file is present.
     """
     for p in files.get("update", []):
         name = p.name
-        prefix = name[:name.find("[")] if "[" in name else name
 
-        # 1. Human-readable version anywhere in the filename (e.g. "v1.0.3", "v1.0.4")
-        #    Search the full name so patterns like "[Up v1.0.3]" are caught too.
+        # 1. Readable version anywhere (also catches "[Up v1.0.3]").
         hm = _HUMAN_VERSION_RE.search(name)
         if hm:
             return f"v{hm.group(1)}"
 
-        # 2. Bracketed [vNNNNNN] integer
+        # 2. Integer [vNNNNNN] in brackets.
         bm = VERSION_RE.search(name)
         if not bm:
             continue
@@ -178,17 +139,16 @@ def _update_version(files: dict[str, list[Path]]) -> str | None:
 
 
 def _xci_filename(game_name: str, files: dict[str, list[Path]]) -> str:
-    """Build the XCI filename following the naming convention.
+    """Build the XCI name according to the convention.
 
     Format: ``TITLE_IN_UPPERCASE-(vX.X.X+DLC).xci``
-    - Title words separated by underscores, all uppercase.
-    - Version suffix only when an update is present.
-    - ``+DLC`` appended when DLC files are included.
-    - No suffix at all when only a base game (no update, no DLC).
+    - words separated by underscores, all uppercase;
+    - version suffix only if an update is present;
+    - ``+DLC`` added when DLC are included;
+    - no suffix for a base game alone (neither update nor DLC).
     """
-    # Uppercase + underscores
-    title = re.sub(r'[\\/:*?"<>|]', "", game_name)  # strip filesystem-unsafe chars
-    title = re.sub(r"[\s\-]+", "_", title.strip())   # spaces/hyphens → underscore
+    title = re.sub(r'[\\/:*?"<>|]', "", game_name)  # strip forbidden characters
+    title = re.sub(r"[\s\-]+", "_", title.strip())  # spaces/hyphens → underscore
     title = re.sub(r"_+", "_", title).upper()
 
     version = _update_version(files)
@@ -206,9 +166,9 @@ def build_group_xci(
     output_dir: Path,
     dry_run: bool = False,
 ) -> Path | None:
-    """Build a single XCI from base + updates + DLCs.
+    """Build a single XCI from base + updates + DLC.
 
-    Returns the output path, or None if skipped.
+    Returns the output path, or None if the operation is skipped.
     """
     base_files = files["base"]
     update_files = files["update"]
@@ -236,9 +196,7 @@ def build_group_xci(
         print(f"  [skip] Output already exists: {out_path}")
         return out_path
 
-    from nx_archiver.pfs0 import parse_pfs0
     from nx_archiver.xci import build_xci
-    from nx_archiver.ncz import decompress_ncz
 
     with tempfile.TemporaryDirectory(prefix="nx-archiver-make-xci-") as tmpdir:
         tmpdir_path = Path(tmpdir)
@@ -247,57 +205,19 @@ def build_group_xci(
         for nsp in inputs:
             is_nsz = nsp.suffix.lower() == ".nsz"
             print(f"  Parsing {'NSZ' if is_nsz else 'NSP'}: {nsp.name}")
-            with open(nsp, "rb") as fh:
-                if is_nsz:
-                    extracted = _extract_nsz(fh, tmpdir_path)
+            for p in extract_nsp(nsp, tmpdir_path):
+                if p.name in all_files:
+                    print(f"    [dup] {p.name} — keeping first occurrence")
                 else:
-                    pfs0 = parse_pfs0(fh)
-                    extracted = pfs0.extract_all(fh, tmpdir_path)
-                for p in extracted:
-                    if p.name in all_files:
-                        print(f"    [dup] {p.name} — keeping first occurrence")
-                    else:
-                        all_files[p.name] = p
+                    all_files[p.name] = p
 
         secure_files = [(name, path) for name, path in sorted(all_files.items())]
         print(f"  Building XCI: {len(secure_files)} NCA(s)")
         with open(out_path, "wb") as out_fh:
             build_xci(secure_files, out_fh)
 
-    print(f"  Written: {out_path} ({out_path.stat().st_size / (1024 ** 2):.0f} MB)")
+    print(f"  Written: {out_path} ({format_size(out_path.stat().st_size)})")
     return out_path
-
-
-def _extract_nsz(fh, tmpdir: Path) -> list[Path]:
-    """Extract an NSZ file to *tmpdir*, decompressing .ncz → .nca."""
-    from nx_archiver.pfs0 import parse_pfs0
-    from nx_archiver.ncz import decompress_ncz
-
-    pfs0 = parse_pfs0(fh)
-    paths: list[Path] = []
-
-    for entry in pfs0.entries:
-        if entry.name.endswith(".ncz"):
-            nca_name = entry.name[:-4] + ".nca"
-            out_path = tmpdir / nca_name
-            fh.seek(entry.offset)
-            with open(out_path, "wb") as out:
-                decompress_ncz(fh, out, entry.size)
-            paths.append(out_path)
-        else:
-            out_path = tmpdir / entry.name
-            fh.seek(entry.offset)
-            with open(out_path, "wb") as out:
-                remaining = entry.size
-                while remaining:
-                    chunk = fh.read(min(1 << 20, remaining))
-                    if not chunk:
-                        break
-                    out.write(chunk)
-                    remaining -= len(chunk)
-            paths.append(out_path)
-
-    return paths
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -310,7 +230,8 @@ def main(argv: list[str] | None = None) -> None:
         help="Directory containing NSP/NSZ files",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=None,
         help="Output directory for XCI files (default: same as input directory)",
@@ -356,7 +277,7 @@ def main(argv: list[str] | None = None) -> None:
 
     print()
     errors: list[str] = []
-    for gid, files in groups.items():
+    for _gid, files in groups.items():
         name = _game_name(files)
         try:
             build_group_xci(name, files, output_dir, dry_run=args.dry_run)

@@ -6,23 +6,29 @@ import argparse
 import sys
 from pathlib import Path
 
+from nx_archiver.cli._common import format_size, validate_input_file
+
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Add or remove NCAs from XCI")
     parser.add_argument("input", type=Path, help="Input XCI file")
     parser.add_argument("-o", "--output", type=Path, required=True, help="Output XCI file")
-    parser.add_argument("--add", nargs="+", type=Path, metavar="NCA", help="NCA files to add to secure partition")
-    parser.add_argument("--remove", nargs="+", metavar="NAME", help="NCA filenames to remove from secure partition")
+    parser.add_argument(
+        "--add", nargs="+", type=Path, metavar="NCA", help="NCA files to add to secure partition"
+    )
+    parser.add_argument(
+        "--remove", nargs="+", metavar="NAME", help="NCA filenames to remove from secure partition"
+    )
     parser.add_argument("--keys", type=Path, help="Path to prod.keys")
-    parser.add_argument("--list", action="store_true", dest="list_contents", help="List XCI contents and exit")
+    parser.add_argument(
+        "--list", action="store_true", dest="list_contents", help="List XCI contents and exit"
+    )
     args = parser.parse_args(argv)
 
-    if not args.input.exists():
-        print(f"Error: {args.input} not found", file=sys.stderr)
-        sys.exit(1)
+    validate_input_file(args.input)
 
-    from nx_archiver.xci import parse_xci, build_xci
     from nx_archiver.hfs0 import FileSlice
+    from nx_archiver.xci import build_xci, parse_xci
 
     with open(args.input, "rb") as fh:
         xci = parse_xci(fh)
@@ -57,17 +63,17 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"  Removing: {entry.name}")
                 continue
             # Reference data directly in the source XCI
-            secure_files.append((
-                entry.name,
-                FileSlice(path=args.input, offset=entry.offset, size=entry.size),
-            ))
-            print(f"  Keeping: {entry.name} ({entry.size / (1024**2):.1f} MB)")
+            secure_files.append(
+                (
+                    entry.name,
+                    FileSlice(path=args.input, offset=entry.offset, size=entry.size),
+                )
+            )
+            print(f"  Keeping: {entry.name} ({format_size(entry.size)})")
 
         # Add new files
-        for nca_path in (args.add or []):
-            if not nca_path.exists():
-                print(f"Error: {nca_path} not found", file=sys.stderr)
-                sys.exit(1)
+        for nca_path in args.add or []:
+            validate_input_file(nca_path, "NCA")
             name = nca_path.name
             if name in {n for n, _ in secure_files}:
                 print(f"  Replacing: {name}")
@@ -80,25 +86,34 @@ def main(argv: list[str] | None = None) -> None:
         update_files: list[tuple[str, Path | FileSlice]] = []
         logo_files: list[tuple[str, Path | FileSlice]] = []
         normal_files: list[tuple[str, Path | FileSlice]] = []
-        for part_name, target_list in [("update", update_files), ("logo", logo_files), ("normal", normal_files)]:
+        for part_name, target_list in [
+            ("update", update_files),
+            ("logo", logo_files),
+            ("normal", normal_files),
+        ]:
             part = xci.partitions.get(part_name)
             if part and part.hfs0.entries:
                 for entry in part.hfs0.entries:
-                    target_list.append((
-                        entry.name,
-                        FileSlice(path=args.input, offset=entry.offset, size=entry.size),
-                    ))
+                    target_list.append(
+                        (
+                            entry.name,
+                            FileSlice(path=args.input, offset=entry.offset, size=entry.size),
+                        )
+                    )
 
         print(f"\nRebuilding XCI: {args.output}")
         print(f"  Secure partition: {len(secure_files)} files")
         with open(args.output, "wb") as out_fh:
-            build_xci(secure_files, out_fh,
-                      update_files=update_files,
-                      normal_files=normal_files,
-                      logo_files=logo_files,
-                      original_header=xci.header.raw)
+            build_xci(
+                secure_files,
+                out_fh,
+                update_files=update_files,
+                normal_files=normal_files,
+                logo_files=logo_files,
+                original_header=xci.header.raw,
+            )
 
-    print(f"XCI written: {args.output} ({args.output.stat().st_size / (1024**2):.1f} MB)")
+    print(f"XCI written: {args.output} ({format_size(args.output.stat().st_size)})")
     print("Done.")
 
 
@@ -107,31 +122,34 @@ def _print_xci_contents(xci, fh, keys_path):
     from nx_archiver.xci import GAMECARD_SIZE_NAMES
 
     h = xci.header
-    print(f"XCI Header:")
+    print("XCI Header:")
     print(f"  Card size: {GAMECARD_SIZE_NAMES.get(h.rom_size, f'0x{h.rom_size:02X}')}")
-    print(f"  Valid data: {h.valid_data_end_page * 0x200 / (1024**3):.2f} GB")
+    print(f"  Valid data: {format_size(h.valid_data_end_page * 0x200)}")
     print()
 
     for name, part in xci.partitions.items():
         entries = part.hfs0.entries
         total = sum(e.size for e in entries)
-        print(f"Partition '{name}': {len(entries)} files, {total / (1024**2):.1f} MB")
+        print(f"Partition '{name}': {len(entries)} files, {format_size(total)}")
         for entry in entries:
-            print(f"  {entry.name}: {entry.size / (1024**2):.1f} MB")
+            print(f"  {entry.name}: {format_size(entry.size)}")
 
         # Try NCA info if keys available
         if keys_path and entries:
             try:
-                from nx_archiver.keys import load_keys, get_header_key
+                from nx_archiver.keys import get_header_key, load_keys
                 from nx_archiver.nca import read_nca_info
+
                 keys = load_keys(keys_path)
                 header_key = get_header_key(keys)
-                print(f"  NCA details:")
+                print("  NCA details:")
                 for entry in entries:
                     try:
                         info = read_nca_info(fh, entry.offset, header_key)
-                        print(f"    {entry.name}: {info.content_type.name}, "
-                              f"TitleID={info.program_id:016X}")
+                        print(
+                            f"    {entry.name}: {info.content_type.name}, "
+                            f"TitleID={info.program_id:016X}"
+                        )
                     except Exception:
                         pass
             except Exception:

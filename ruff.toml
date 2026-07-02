@@ -1,0 +1,33 @@
+# Ruff configuration — single linter + formatter for the whole monorepo.
+#
+# Ruff plays the combined role of ESLint (lint) and Prettier (format) on the Python side.
+# This configuration lives at the root: it therefore applies to all modules
+# (nx-archiver, psx-archiver, ai-tools) and is discovered automatically by the
+# Ruff extension in IDEs (VS Code / PyCharm) for fix-on-save.
+#
+# Manual usage:
+#   ruff format .          # format (equivalent to Prettier)
+#   ruff format --check .  # check without modifying
+#   ruff check .           # lint (equivalent to ESLint)
+#   ruff check --fix .     # lint + automatic fixes
+
+line-length = 100
+target-version = "py310"
+
+# Generated / out-of-scope folders.
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[lint]
+# E/W: pycodestyle, F: pyflakes, I: import sorting (isort),
+# B: bugbear (common pitfalls), UP: pyupgrade (modern syntax).
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

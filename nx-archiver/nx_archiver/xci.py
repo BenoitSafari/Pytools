@@ -11,7 +11,6 @@ from typing import BinaryIO
 
 from nx_archiver.hfs0 import (
     HFS0,
-    HFS0Entry,
     FileSlice,
     build_hfs0,
     build_hfs0_empty,
@@ -27,17 +26,17 @@ CARD_HEADER_MAGIC = b"HEAD"
 # Standard layout: root HFS0 at 0xF000, then update at 0xF200, normal at 0xF400,
 # secure at 0xF600. This matches what real XCIs look like.
 ROOT_HFS0_HEADER_PADDED = 0x200  # root HFS0 header is padded to 0x200
-EMPTY_PARTITION_SIZE = 0x200     # empty partitions are padded to 0x200
+EMPTY_PARTITION_SIZE = 0x200  # empty partitions are padded to 0x200
 SECURE_PARTITION_OFFSET = 0xF600  # standard offset for secure partition
 
 # GameCard size enum values
 GAMECARD_SIZES: dict[int, int] = {
-    1:  0xFA,   # 1 GB
-    2:  0xF8,   # 2 GB
-    4:  0xF0,   # 4 GB
-    8:  0xE0,   # 8 GB
-    16: 0xE1,   # 16 GB
-    32: 0xE2,   # 32 GB
+    1: 0xFA,  # 1 GB
+    2: 0xF8,  # 2 GB
+    4: 0xF0,  # 4 GB
+    8: 0xE0,  # 8 GB
+    16: 0xE1,  # 16 GB
+    32: 0xE2,  # 32 GB
 }
 GAMECARD_SIZE_NAMES: dict[int, str] = {v: f"{k} GB" for k, v in GAMECARD_SIZES.items()}
 
@@ -47,6 +46,7 @@ PARTITION_NAMES = ["update", "normal", "secure"]
 @dataclass
 class XCIHeader:
     """Parsed XCI CardHeader."""
+
     raw: bytes  # full 0x200-byte header
     magic: bytes
     rom_area_start_page: int
@@ -64,6 +64,7 @@ class XCIHeader:
 @dataclass
 class XCIPartition:
     """One HFS0 partition inside the XCI."""
+
     name: str
     hfs0: HFS0
     absolute_offset: int  # absolute offset of this HFS0 in the XCI
@@ -72,6 +73,7 @@ class XCIPartition:
 @dataclass
 class XCI:
     """Parsed XCI file."""
+
     header: XCIHeader
     root_hfs0: HFS0
     partitions: dict[str, XCIPartition] = field(default_factory=dict)
@@ -117,7 +119,7 @@ def parse_xci(stream: BinaryIO) -> XCI:
 
 def _gamecard_size_code(total_bytes: int) -> int:
     """Return the gamecard size enum for *total_bytes*."""
-    gb = total_bytes / (1024 ** 3)
+    gb = total_bytes / (1024**3)
     for size_gb in sorted(GAMECARD_SIZES.keys()):
         if gb <= size_gb:
             return GAMECARD_SIZES[size_gb]
@@ -250,7 +252,7 @@ def _build_root_hfs0_header_with_hashes(
     secure_files: list[tuple[str, Path | BinaryIO | FileSlice]],
 ) -> bytes:
     """Build the root HFS0 header with proper SHA-256 hashes, padded to 0x200."""
-    from nx_archiver.hfs0 import MAGIC, ENTRY_SIZE, HEADER_SIZE
+    from nx_archiver.hfs0 import ENTRY_SIZE, HEADER_SIZE, MAGIC
 
     # Build string table — pad to make total header = 0x200
     file_count = len(names)
@@ -306,7 +308,11 @@ def _build_hfs0_header_only(
     files: list[tuple[str, Path | BinaryIO | FileSlice]],
 ) -> bytes:
     """Build just the HFS0 header (no file data) for hash computation."""
-    from nx_archiver.hfs0 import MAGIC, ENTRY_SIZE, HEADER_SIZE, DEFAULT_HASHED_REGION_SIZE, _resolve_source
+    from nx_archiver.hfs0 import (
+        DEFAULT_HASHED_REGION_SIZE,
+        MAGIC,
+        _resolve_source,
+    )
 
     str_table = bytearray()
     name_offsets: list[int] = []
@@ -321,7 +327,7 @@ def _build_hfs0_header_only(
     buf.write(struct.pack("<4sIII", MAGIC, file_count, len(str_table), 0))
 
     data_off = 0
-    for i, (name, src) in enumerate(files):
+    for i, (_name, src) in enumerate(files):
         sz, h, _ = _resolve_source(src, DEFAULT_HASHED_REGION_SIZE)
         hashed_size = min(DEFAULT_HASHED_REGION_SIZE, sz)
         entry = struct.pack("<QQIIxxxxxxxx", data_off, sz, name_offsets[i], hashed_size)

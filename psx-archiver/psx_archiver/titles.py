@@ -4,8 +4,21 @@ import re
 
 UPPER_WORDS = {"II", "III", "IV", "VI", "VII", "VIII", "IX", "X4", "X5", "X6"}
 LOWER_WORDS = {
-    "OF", "THE", "AND", "IN", "TO", "A", "AN", "AT", "BY", "FOR", "ON", "OR",
-    "IS", "IT", "VS",
+    "OF",
+    "THE",
+    "AND",
+    "IN",
+    "TO",
+    "A",
+    "AN",
+    "AT",
+    "BY",
+    "FOR",
+    "ON",
+    "OR",
+    "IS",
+    "IT",
+    "VS",
 }
 
 

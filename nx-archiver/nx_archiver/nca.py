@@ -69,8 +69,8 @@ def _aes_xts_crypt(data: bytes, key: bytes, sector_num: int, decrypt: bool) -> b
     """
     from Crypto.Cipher import AES
 
-    key1 = key[:16]   # data key
-    key2 = key[16:]   # tweak key
+    key1 = key[:16]  # data key
+    key2 = key[16:]  # tweak key
 
     aes_data = AES.new(key1, AES.MODE_ECB)
     aes_tweak = AES.new(key2, AES.MODE_ECB)
@@ -155,7 +155,7 @@ def parse_nca_header(decrypted: bytes) -> NCAHeader:
     dist_type = DistributionType(decrypted[0x204])
     content_type = ContentType(decrypted[0x205])
     key_gen_old = decrypted[0x206]
-    keak_index = decrypted[0x207]
+    kek_index = decrypted[0x207]
     content_size = struct.unpack_from("<Q", decrypted, 0x208)[0]
     program_id = struct.unpack_from("<Q", decrypted, 0x210)[0]
     content_index = struct.unpack_from("<I", decrypted, 0x218)[0]
@@ -169,7 +169,7 @@ def parse_nca_header(decrypted: bytes) -> NCAHeader:
         distribution_type=dist_type,
         content_type=content_type,
         key_generation_old=key_gen_old,
-        key_area_encryption_key_index=keak_index,
+        key_area_encryption_key_index=kek_index,
         content_size=content_size,
         program_id=program_id,
         content_index=content_index,

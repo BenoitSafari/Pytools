@@ -7,27 +7,50 @@ Multi-disc: Title_discN-(Region)(Languages)(Serial).ext
 import re
 from pathlib import Path
 
-from psx_archiver.db import load_database, lookup_serial
+from psx_archiver.db import load_database
 from psx_archiver.logger import log
 from psx_archiver.serial import (
-    extract_serial_from_chd, extract_serial_from_cso, extract_serial_from_iso,
-    extract_serial_from_psp_cso, extract_serial_from_psp_iso,
+    extract_serial_from_chd,
+    extract_serial_from_cso,
+    extract_serial_from_iso,
+    extract_serial_from_psp_cso,
+    extract_serial_from_psp_iso,
 )
 from psx_archiver.titles import clean_title
 
 # Serial prefix -> region fallback
 REGION_MAP = {
-    "SCES": "PAL", "SLES": "PAL", "SCED": "PAL", "SLED": "PAL",
-    "SLUS": "NTSC-U", "SCUS": "NTSC-U",
-    "SLPS": "NTSC-J", "SCPS": "NTSC-J", "SLPM": "NTSC-J",
+    "SCES": "PAL",
+    "SLES": "PAL",
+    "SCED": "PAL",
+    "SLED": "PAL",
+    "SLUS": "NTSC-U",
+    "SCUS": "NTSC-U",
+    "SLPS": "NTSC-J",
+    "SCPS": "NTSC-J",
+    "SLPM": "NTSC-J",
     # PSP prefixes
-    "ULUS": "NTSC-U", "UCUS": "NTSC-U",
-    "ULES": "PAL", "UCES": "PAL",
-    "ULJM": "NTSC-J", "ULJS": "NTSC-J", "UCJS": "NTSC-J", "UCJM": "NTSC-J",
-    "NPUG": "NTSC-U", "NPUH": "NTSC-U", "NPUZ": "NTSC-U", "NPUF": "NTSC-U",
-    "NPEG": "PAL", "NPEH": "PAL", "NPEZ": "PAL", "NPEX": "PAL",
-    "NPJG": "NTSC-J", "NPJH": "NTSC-J", "NPJJ": "NTSC-J",
+    "ULUS": "NTSC-U",
+    "UCUS": "NTSC-U",
+    "ULES": "PAL",
+    "UCES": "PAL",
+    "ULJM": "NTSC-J",
+    "ULJS": "NTSC-J",
+    "UCJS": "NTSC-J",
+    "UCJM": "NTSC-J",
+    "NPUG": "NTSC-U",
+    "NPUH": "NTSC-U",
+    "NPUZ": "NTSC-U",
+    "NPUF": "NTSC-U",
+    "NPEG": "PAL",
+    "NPEH": "PAL",
+    "NPEZ": "PAL",
+    "NPEX": "PAL",
+    "NPJG": "NTSC-J",
+    "NPJH": "NTSC-J",
+    "NPJJ": "NTSC-J",
 }
+
 
 def _get_disc_number(name):
     m = re.search(r" CD(\d+)$", name)
@@ -36,8 +59,26 @@ def _get_disc_number(name):
 
 # Language tokens commonly seen in redump/nointro filenames
 _LANG_TOKENS = {
-    "En", "Fr", "De", "Es", "It", "Nl", "Pt", "Sv", "No", "Nw", "Da", "Fi",
-    "Ja", "Ko", "Zh", "Ch", "Ru", "Pl", "Du", "Cs",
+    "En",
+    "Fr",
+    "De",
+    "Es",
+    "It",
+    "Nl",
+    "Pt",
+    "Sv",
+    "No",
+    "Nw",
+    "Da",
+    "Fi",
+    "Ja",
+    "Ko",
+    "Zh",
+    "Ch",
+    "Ru",
+    "Pl",
+    "Du",
+    "Cs",
 }
 
 

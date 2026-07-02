@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from pathlib import Path
 from typing import BinaryIO
 
 NCA_HEADER_SIZE = 0x4000
@@ -20,9 +19,9 @@ CHUNK_SIZE = 0x10000  # 64 KiB read chunks
 
 @dataclass
 class Section:
-    offset: int        # offset in decompressed NCA
-    size: int          # decompressed size
-    crypto_type: int   # 1=plain, 3/4=AES-CTR
+    offset: int  # offset in decompressed NCA
+    size: int  # decompressed size
+    crypto_type: int  # 1=plain, 3/4=AES-CTR
     crypto_key: bytes  # 16 bytes
     crypto_counter: bytes  # 16 bytes
 
@@ -49,13 +48,15 @@ def _parse_sections(stream: BinaryIO) -> list[Section]:
         offset, size, crypto_type, _pad = struct.unpack_from("<qqqq", data, 0)
         crypto_key = data[0x20:0x30]
         crypto_counter = data[0x30:0x40]
-        sections.append(Section(
-            offset=offset,
-            size=size,
-            crypto_type=crypto_type,
-            crypto_key=crypto_key,
-            crypto_counter=crypto_counter,
-        ))
+        sections.append(
+            Section(
+                offset=offset,
+                size=size,
+                crypto_type=crypto_type,
+                crypto_key=crypto_key,
+                crypto_counter=crypto_counter,
+            )
+        )
     return sections
 
 
@@ -99,6 +100,7 @@ def _decompress_stream(
 ) -> None:
     """Decompress a solid zstd stream and re-encrypt sections."""
     import zstandard
+
     dctx = zstandard.ZstdDecompressor()
     reader = dctx.stream_reader(stream)
 
@@ -106,13 +108,15 @@ def _decompress_stream(
     # Insert a fake plaintext section for the gap between NCA header and first real section
     all_sections: list[Section] = []
     if sections and sections[0].offset > NCA_HEADER_SIZE:
-        all_sections.append(Section(
-            offset=NCA_HEADER_SIZE,
-            size=sections[0].offset - NCA_HEADER_SIZE,
-            crypto_type=1,
-            crypto_key=b"\x00" * 16,
-            crypto_counter=b"\x00" * 16,
-        ))
+        all_sections.append(
+            Section(
+                offset=NCA_HEADER_SIZE,
+                size=sections[0].offset - NCA_HEADER_SIZE,
+                crypto_type=1,
+                crypto_key=b"\x00" * 16,
+                crypto_counter=b"\x00" * 16,
+            )
+        )
     all_sections.extend(sections)
 
     for section in all_sections:
@@ -144,24 +148,26 @@ def _decompress_blocks(
 ) -> None:
     """Decompress block-compressed NCZ and re-encrypt sections."""
     import zstandard
+
     dctx = zstandard.ZstdDecompressor()
     block_size = 1 << block_header.block_size_exponent
 
     # Build section lookup: for each byte offset, which section applies
     all_sections: list[Section] = []
     if sections and sections[0].offset > NCA_HEADER_SIZE:
-        all_sections.append(Section(
-            offset=NCA_HEADER_SIZE,
-            size=sections[0].offset - NCA_HEADER_SIZE,
-            crypto_type=1,
-            crypto_key=b"\x00" * 16,
-            crypto_counter=b"\x00" * 16,
-        ))
+        all_sections.append(
+            Section(
+                offset=NCA_HEADER_SIZE,
+                size=sections[0].offset - NCA_HEADER_SIZE,
+                crypto_type=1,
+                crypto_key=b"\x00" * 16,
+                crypto_counter=b"\x00" * 16,
+            )
+        )
     all_sections.extend(sections)
 
     # Decompress all blocks sequentially
     decompressed_pos = NCA_HEADER_SIZE  # we start after the NCA header
-    section_idx = 0
 
     for i, comp_size in enumerate(block_header.compressed_sizes):
         # Determine decompressed block size
@@ -244,5 +250,5 @@ def decompress_ncz(stream: BinaryIO, output: BinaryIO, ncz_size: int) -> int:
     else:
         _decompress_stream(stream, sections, output, decompressed_size)
 
-    total = output.tell() if hasattr(output, 'tell') else decompressed_size
+    total = output.tell() if hasattr(output, "tell") else decompressed_size
     return total

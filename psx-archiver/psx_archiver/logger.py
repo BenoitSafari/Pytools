@@ -21,3 +21,8 @@ def fail(msg):
 
 def skip(msg):
     print(f"[SKIP] {msg}")
+
+
+def dry_run(action, target):
+    """Log a simulated action (--dry-run mode), e.g. "[DRY] Would convert: …"."""
+    log(f"[DRY] Would {action}: {target}")

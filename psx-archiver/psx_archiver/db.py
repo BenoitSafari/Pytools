@@ -6,7 +6,7 @@ import csv
 def load_database(db_path, console="PS1"):
     """Load the PSX datacenter CSV, filtered by console."""
     db = {}
-    with open(db_path, "r", encoding="utf-8", errors="replace") as f:
+    with open(db_path, encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row["console"] == console:

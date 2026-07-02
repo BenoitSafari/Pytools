@@ -1,22 +1,31 @@
-"""Dependency checking for external tools."""
+"""Check for the required external tools."""
+
+from __future__ import annotations
 
 import shutil
 
+# Installation hints per tool, covering Linux (apt/pacman), macOS (brew),
+# Windows (winget/scoop/choco) and pip where relevant.
 INSTALL_HINTS = {
-    "7z": "p7zip-full (apt) / p7zip (pacman) / p7zip (brew)",
-    "chdman": "mame-tools (apt/pacman) / mame (brew)",
-    "maxcso": "maxcso (pacman/pip) / maxcso (brew)",
-    "ciso": "ciso (pip)",
+    "7z": (
+        "apt install p7zip-full · pacman -S p7zip · brew install p7zip · winget install 7zip.7zip"
+    ),
+    "chdman": (
+        "apt install mame-tools · pacman -S mame-tools · brew install rmame · "
+        "Windows: download MAME (https://github.com/mamedev/mame/releases)"
+    ),
+    "maxcso": "pacman -S maxcso · brew install maxcso · pip install maxcso · scoop install maxcso",
+    "ciso": "pip install ciso",
 }
 
 
-def check_dependencies(platform):
-    """Check required external tools for the given platform.
+def check_dependencies(platform: str | None) -> list[str]:
+    """Check the external tools required for the given platform.
 
-    If platform is None, only checks common dependencies (7z).
-    Returns list of error messages for missing deps, empty if all OK.
+    If *platform* is None, only the common dependencies (7z) are checked.
+    Returns the list of error messages for missing tools (empty if all are present).
     """
-    missing = []
+    missing: list[str] = []
 
     if not shutil.which("7z"):
         missing.append(f"7z - install: {INSTALL_HINTS['7z']}")

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from nx_archiver._io import copy_stream
+
 MAGIC = b"HFS0"
 ENTRY_SIZE = 0x40
 HEADER_SIZE = 0x10
@@ -21,6 +23,7 @@ FileSource = "Path | BinaryIO | FileSlice"
 @dataclass
 class FileSlice:
     """Reference to a region inside an existing file (avoids copying to temp)."""
+
     path: Path
     offset: int
     size: int
@@ -96,13 +99,15 @@ def parse_hfs0(stream: BinaryIO, base_offset: int | None = None) -> HFS0:
         end = entry_data.index(b"\x00", str_start + name_off)
         name = entry_data[str_start + name_off : end].decode("ascii")
 
-        entries.append(HFS0Entry(
-            name=name,
-            offset=data_region_offset + data_off,
-            size=data_size,
-            hashed_region_size=hashed_size,
-            sha256=sha256,
-        ))
+        entries.append(
+            HFS0Entry(
+                name=name,
+                offset=data_region_offset + data_off,
+                size=data_size,
+                hashed_region_size=hashed_size,
+                sha256=sha256,
+            )
+        )
 
     return HFS0(entries=entries, data_offset=data_region_offset, header_size=header_total)
 
@@ -143,12 +148,12 @@ def _write_source(src, output, size):
     if isinstance(src, FileSlice):
         with open(src.path, "rb") as fh:
             fh.seek(src.offset)
-            return _copy_stream(fh, output, size)
+            return copy_stream(fh, output, size)
     elif isinstance(src, Path):
         with open(src, "rb") as fh:
-            return _copy_stream(fh, output, size)
+            return copy_stream(fh, output, size)
     else:
-        return _copy_stream(src, output, size)
+        return copy_stream(src, output, size)
 
 
 def build_hfs0(
@@ -219,16 +224,3 @@ def build_hfs0_empty(output: BinaryIO, total_size: int = 0x200) -> int:
     output.write(header)
     output.write(b"\x00" * str_table_size)
     return total_size
-
-
-def _copy_stream(src: BinaryIO, dst: BinaryIO, size: int) -> int:
-    remaining = size
-    written = 0
-    while remaining:
-        chunk = src.read(min(COPY_BUF, remaining))
-        if not chunk:
-            break
-        dst.write(chunk)
-        remaining -= len(chunk)
-        written += len(chunk)
-    return written

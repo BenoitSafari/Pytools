@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psx-archiver"
+version = "0.1.0"
+description = "Extraction, conversion and renaming of PlayStation disc images (PS1/PS2/PSP)"
+requires-python = ">=3.10"
+# No Python dependencies: the heavy lifting is delegated to external tools
+# (7z, chdman, maxcso/ciso) — see `psx_archiver/deps.py` for installation.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
+# Console script in kebab-case (the Python package stays snake_case, PEP 8).
+[project.scripts]
+psx-archiver = "psx_archiver.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["psx_archiver*"]

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from nx_archiver._io import copy_stream
+
 MAGIC = b"PFS0"
 ENTRY_SIZE = 0x18
 HEADER_SIZE = 0x10
@@ -79,11 +81,13 @@ def parse_pfs0(stream: BinaryIO, base_offset: int | None = None) -> PFS0:
         end = entry_data.index(b"\x00", str_start + name_off)
         name = entry_data[str_start + name_off : end].decode("ascii")
 
-        entries.append(PFS0Entry(
-            name=name,
-            offset=data_region_offset + data_off,
-            size=data_size,
-        ))
+        entries.append(
+            PFS0Entry(
+                name=name,
+                offset=data_region_offset + data_off,
+                size=data_size,
+            )
+        )
 
     return PFS0(entries=entries, data_offset=data_region_offset)
 
@@ -137,16 +141,6 @@ def build_pfs0(files: list[tuple[str, Path | BinaryIO]], output: BinaryIO) -> No
     for i, src in enumerate(sources):
         if isinstance(src, Path):
             with open(src, "rb") as fh:
-                _copy_stream(fh, output, sizes[i])
+                copy_stream(fh, output, sizes[i])
         else:
-            _copy_stream(src, output, sizes[i])
-
-
-def _copy_stream(src: BinaryIO, dst: BinaryIO, size: int) -> None:
-    remaining = size
-    while remaining:
-        chunk = src.read(min(COPY_BUF, remaining))
-        if not chunk:
-            break
-        dst.write(chunk)
-        remaining -= len(chunk)
+            copy_stream(src, output, sizes[i])
